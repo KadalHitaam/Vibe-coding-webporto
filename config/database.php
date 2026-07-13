@@ -2,9 +2,9 @@
 // config/database.php
 
 $host = "localhost";
-$username = "ifummiid_kelasa";
-$password = "pemweb_db_a";
-$database = "ifummiid_kelasa";
+$username = "root";
+$password = "";
+$database = "db_myprofile";
 
 // Mengaktifkan exception mode untuk mysqli (Best Practice)
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
