@@ -1,40 +1,93 @@
 <?php
-session_start();
-// Cek apakah user sudah punya tiket login
-if($_SESSION['status'] != "sudah_login"){
-    // Kalau belum login, tendang balik ke halaman login
-    header("location:login.php?pesan=belum_login");
-    exit; // Hentikan script agar kode HTML di bawahnya tidak sempat dimuat
-}
-// Panggil koneksi database
-include 'koneksi.php';
+require_once 'includes/auth.php';
+require_once 'config/database.php';
 
-// ==== PROSES SIMPAN DATA (CREATE & UPLOAD MULTIPLE) ====
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $nama = $_POST['nama'];
-    $status = $_POST['status']; // Mengambil nilai dropdown status
-    $ttd_base64 = $_POST['ttd_base64']; // Mengambil data gambar TTD dari input hidden
-
-    // 1. Simpan ke tabel buku_tamu
-    $query_tamu = mysqli_query($koneksi, "INSERT INTO buku_tamu_naufal_2430511010 (nama, status, tanda_tangan) VALUES ('$nama', '$status', '$ttd_base64')");
+// ==== PROSES HAPUS DATA ====
+if (isset($_GET['hapus_id'])) {
+    $id_hapus = intval($_GET['hapus_id']);
     
-    if ($query_tamu) {
-        // Ambil ID tamu yang baru saja masuk
-        $id_tamu = mysqli_insert_id($koneksi);
+    // 1. Ambil nama file untuk dihapus fisik
+    $stmt_file = $db->prepare("SELECT nama_file FROM file_tamu_naufal_2430511010 WHERE id_tamu = ?");
+    $stmt_file->bind_param("i", $id_hapus);
+    $stmt_file->execute();
+    $result_file = $stmt_file->get_result();
+    
+    while ($file = $result_file->fetch_assoc()) {
+        $path = "uploads/" . $file['nama_file'];
+        if (file_exists($path)) {
+            unlink($path);
+        }
+    }
+    $stmt_file->close();
+    
+    // 2. Hapus data dari database (menggunakan Prepared Statements)
+    $stmt_del_file = $db->prepare("DELETE FROM file_tamu_naufal_2430511010 WHERE id_tamu = ?");
+    $stmt_del_file->bind_param("i", $id_hapus);
+    $stmt_del_file->execute();
+    $stmt_del_file->close();
 
-        // 2. Proses Upload Multiple File
+    $stmt_del_tamu = $db->prepare("DELETE FROM buku_tamu_naufal_2430511010 WHERE id = ?");
+    $stmt_del_tamu->bind_param("i", $id_hapus);
+    $stmt_del_tamu->execute();
+    $stmt_del_tamu->close();
+    
+    echo "<script>alert('Data berhasil dihapus!'); window.location='guestbook.php';</script>";
+    exit();
+}
+
+// ==== PROSES EDIT DATA ====
+if (isset($_POST['edit_data'])) {
+    $id_edit = intval($_POST['id_edit']);
+    $nama_edit = trim($_POST['nama']);
+    $status_edit = intval($_POST['status']);
+    
+    $stmt_edit = $db->prepare("UPDATE buku_tamu_naufal_2430511010 SET nama=?, status=? WHERE id=?");
+    $stmt_edit->bind_param("sii", $nama_edit, $status_edit, $id_edit);
+    $stmt_edit->execute();
+    $stmt_edit->close();
+    
+    echo "<script>alert('Data berhasil diupdate!'); window.location='guestbook.php';</script>";
+    exit();
+}
+
+// ==== PROSES SIMPAN DATA ====
+if (isset($_POST['simpan_data'])) {
+    $nama = trim($_POST['nama']);
+    $status = intval($_POST['status']);
+    $ttd_base64 = $_POST['ttd_base64'];
+
+    $stmt_tamu = $db->prepare("INSERT INTO buku_tamu_naufal_2430511010 (nama, status, tanda_tangan) VALUES (?, ?, ?)");
+    $stmt_tamu->bind_param("sis", $nama, $status, $ttd_base64);
+    
+    if ($stmt_tamu->execute()) {
+        $id_tamu = $stmt_tamu->insert_id;
+        $stmt_tamu->close();
+
+        // Proses Upload Multiple File (Aman)
+        $allowed_extensions = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'];
         $jumlah_file = count($_FILES['files']['name']);
+
         for ($i = 0; $i < $jumlah_file; $i++) {
             $nama_file = $_FILES['files']['name'][$i];
             $tmp_name = $_FILES['files']['tmp_name'][$i];
+            $error = $_FILES['files']['error'][$i];
+            $ukuran = $_FILES['files']['size'][$i];
             
-            // Cek jika ada file yang diupload
-            if ($nama_file != "") {
-                $folder_tujuan = "uploads/" . $nama_file;
-                move_uploaded_file($tmp_name, $folder_tujuan); // Pindahkan file ke folder uploads
+            if ($error === 0 && $nama_file != "" && $ukuran > 0) {
+                $file_ext = strtolower(pathinfo($nama_file, PATHINFO_EXTENSION));
                 
-                // Simpan nama file ke tabel file_tamu
-                mysqli_query($koneksi, "INSERT INTO file_tamu_naufal_2430511010 (id_tamu, nama_file) VALUES ('$id_tamu', '$nama_file')");
+                if (in_array($file_ext, $allowed_extensions)) {
+                    // Beri nama unik agar tidak tertimpa
+                    $nama_file_baru = uniqid() . '-' . basename($nama_file);
+                    $folder_tujuan = "uploads/" . $nama_file_baru;
+                    
+                    if (move_uploaded_file($tmp_name, $folder_tujuan)) {
+                        $stmt_upload = $db->prepare("INSERT INTO file_tamu_naufal_2430511010 (id_tamu, nama_file) VALUES (?, ?)");
+                        $stmt_upload->bind_param("is", $id_tamu, $nama_file_baru);
+                        $stmt_upload->execute();
+                        $stmt_upload->close();
+                    }
+                }
             }
         }
         echo "<script>alert('Data berhasil disimpan!'); window.location='guestbook.php';</script>";
@@ -42,62 +95,59 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buku Tamu</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-    <style> body { font-family: 'Poppins', sans-serif; background-color: #f4f9f9; } </style>
-</head>
-<body>
-    <?php include 'navbar.php'; ?>
+<?php require_once 'includes/header.php'; require_once 'includes/navbar.php'; ?>
 
-    <div class="container mt-4 mb-5">
-        <div class="row">
-            <div class="col-md-4">
-                <div class="card shadow-sm p-4" style="border-radius: 15px; border: none;">
-                    <h4>Isi Buku Tamu 📝</h4>
-                    <form action="guestbook.php" method="POST" enctype="multipart/form-data">
-                        <div class="mb-3">
-                            <label class="form-label">Nama Pengunjung</label>
-                            <input type="text" class="form-control" name="nama" required>
+<main class="container py-5">
+    <div class="row g-4">
+        <!-- Form Input -->
+        <div class="col-lg-4">
+            <div class="glass-card p-4 sticky-top" style="top: 100px; z-index: 1;">
+                <h4 class="fw-bold text-gradient mb-4">Isi Buku Tamu 📝</h4>
+                <form action="guestbook.php" method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Nama Pengunjung</label>
+                        <input type="text" class="form-control" name="nama" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Status</label>
+                        <select class="form-select" name="status">
+                            <option value="1">Hadir</option>
+                            <option value="2">Titip Salam</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Upload Lampiran</label>
+                        <input type="file" class="form-control" name="files[]" multiple required accept=".jpg,.jpeg,.png,.pdf,.doc,.docx">
+                        <small class="text-muted d-block mt-1">Bisa pilih lebih dari satu file (JPG, PNG, PDF, DOC).</small>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Tanda Tangan Digital</label>
+                        <div class="bg-white rounded-3 overflow-hidden" style="border: 2px dashed #cbd5e1;">
+                            <canvas id="canvasTTD" width="100%" height="150" class="w-100"></canvas>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Status</label>
-                            <select class="form-select" name="status">
-                                <option value="1">Hadir</option>
-                                <option value="2">Titip Salam</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Upload File (Bisa Banyak)</label>
-                            <input type="file" class="form-control" name="files[]" multiple required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Tanda Tangan Digital</label><br>
-                            <canvas id="canvasTTD" width="300" height="150" style="border: 2px dashed #a4cbee; background: #fff; border-radius: 10px;"></canvas>
-                            <br>
-                            <button type="button" class="btn btn-sm btn-warning mt-2" onclick="clearCanvas()">Hapus TTD</button>
-                            <input type="hidden" name="ttd_base64" id="ttd_base64" required>
-                        </div>
-                        <button type="submit" class="btn w-100" style="background-color: #a4cbee; border:none; color:#333; font-weight:bold;">Simpan Data</button>
-                    </form>
-                </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger mt-2 fw-semibold" onclick="clearCanvas()">Hapus TTD</button>
+                        <input type="hidden" name="ttd_base64" id="ttd_base64" required>
+                    </div>
+                    <button type="submit" name="simpan_data" class="btn btn-premium w-100" onclick="saveCanvas()">Simpan Data</button>
+                </form>
             </div>
+        </div>
 
-            <div class="col-md-8">
-                <div class="card shadow-sm p-4" style="border-radius: 15px; border: none;">
-                    <h4>Data Pengunjung</h4>
-                    <a href="export_pdf.php" target="_blank" class="btn btn-danger btn-sm mb-3">📄 Ekspor ke PDF</a>
+        <!-- Data Table -->
+        <div class="col-lg-8">
+            <div class="glass-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="fw-bold mb-0">Daftar Pengunjung</h4>
+                    <a href="export_pdf.php" target="_blank" class="btn btn-danger btn-sm px-3 shadow-sm">
+                        <i class="bi bi-file-earmark-pdf"></i> Ekspor PDF
+                    </a>
+                </div>
 
-                    <table class="table table-striped mt-3" id="tabelTamu"></table>
-                        <thead>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" id="tabelTamu">
+                        <thead class="table-light">
                             <tr>
-                                <th>No.</th>
+                                <th>No</th>
                                 <th>Nama</th>
                                 <th>Status</th>
                                 <th>Aksi</th>
@@ -105,51 +155,97 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </thead>
                         <tbody>
                             <?php
-                            // Mengambil data dari database
                             $no = 1;
-                            $query_tampil = mysqli_query($koneksi, "SELECT * FROM buku_tamu_naufal_2430511010 ORDER BY id DESC");
-                            while ($row = mysqli_fetch_assoc($query_tampil)) {
+                            $query_tampil = $db->query("SELECT * FROM buku_tamu_naufal_2430511010 ORDER BY id DESC");
+                            while ($row = $query_tampil->fetch_assoc()) {
                             ?>
                             <tr>
                                 <td><?= $no++; ?></td>
-                                <td><?= $row['nama']; ?></td>
+                                <td class="fw-semibold text-dark"><?= htmlspecialchars($row['nama']); ?></td>
                                 <td>
                                     <?php if($row['status'] == 1): ?>
-                                        <span class="badge bg-success">Hadir</span>
+                                        <span class="badge bg-success rounded-pill px-3 py-2">Hadir</span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary">Titip Salam</span>
+                                        <span class="badge bg-secondary rounded-pill px-3 py-2">Titip Salam</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-info text-white fw-bold" data-bs-toggle="modal" data-bs-target="#modalDetail<?= $row['id']; ?>">Detail</button>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-info text-white" data-bs-toggle="modal" data-bs-target="#modalDetail<?= $row['id']; ?>">Detail</button>
+                                        <button class="btn btn-sm btn-warning text-dark" data-bs-toggle="modal" data-bs-target="#modalEdit<?= $row['id']; ?>">Edit</button>
+                                        <a href="guestbook.php?hapus_id=<?= $row['id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('Yakin ingin menghapus data tamu beserta lampirannya?');">Hapus</a>
+                                    </div>
                                 </td>
                             </tr>
 
+                            <!-- Modal Detail -->
                             <div class="modal fade" id="modalDetail<?= $row['id']; ?>" tabindex="-1">
                                 <div class="modal-dialog">
-                                    <div class="modal-content">
-                                        <div class="modal-header" style="background-color: #d0e8f2;">
-                                            <h5 class="modal-title">Detail Pengunjung</h5>
+                                    <div class="modal-content border-0 shadow">
+                                        <div class="modal-header bg-light">
+                                            <h5 class="modal-title fw-bold">Detail Pengunjung</h5>
                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                         </div>
-                                        <div class="modal-body text-center">
-                                            <p><strong>Nama:</strong> <?= $row['nama']; ?></p>
-                                            <p><strong>Tanda Tangan:</strong></p>
-                                            <img src="<?= $row['tanda_tangan']; ?>" alt="TTD" style="border:1px solid #ccc; max-width: 100%;">
-                                            
+                                        <div class="modal-body text-center p-4">
+                                            <h4 class="fw-bold mb-3"><?= htmlspecialchars($row['nama']); ?></h4>
+                                            <div class="mb-4">
+                                                <p class="text-muted fw-semibold mb-2">Tanda Tangan</p>
+                                                <div class="bg-light p-2 rounded-3 mx-auto" style="width: fit-content; border: 1px solid #e2e8f0;">
+                                                    <img src="<?= $row['tanda_tangan']; ?>" alt="TTD" style="max-height: 100px;">
+                                                </div>
+                                            </div>
                                             <hr>
-                                            <p><strong>File yang diupload:</strong></p>
-                                            <ul style="list-style: none; padding:0;">
-                                                <?php
-                                                // Ambil file terkait dari tabel file_tamu
-                                                $id_tamu_sekarang = $row['id'];
-                                                $query_file = mysqli_query($koneksi, "SELECT * FROM file_tamu_naufal_2430511010 WHERE id_tamu = '$id_tamu_sekarang'");
-                                                while($file = mysqli_fetch_assoc($query_file)){
-                                                    echo "<li><a href='uploads/".$file['nama_file']."' target='_blank'>".$file['nama_file']."</a></li>";
-                                                }
-                                                ?>
-                                            </ul>
+                                            <div class="text-start">
+                                                <p class="text-muted fw-semibold mb-2">Lampiran File:</p>
+                                                <ul class="list-group list-group-flush">
+                                                    <?php
+                                                    $id_tamu_sekarang = $row['id'];
+                                                    $stmt_files = $db->prepare("SELECT nama_file FROM file_tamu_naufal_2430511010 WHERE id_tamu = ?");
+                                                    $stmt_files->bind_param("i", $id_tamu_sekarang);
+                                                    $stmt_files->execute();
+                                                    $result_files = $stmt_files->get_result();
+                                                    while($file = $result_files->fetch_assoc()){
+                                                        echo "<li class='list-group-item bg-transparent px-0'><a href='uploads/".htmlspecialchars($file['nama_file'])."' target='_blank' class='text-decoration-none'>📄 ".htmlspecialchars($file['nama_file'])."</a></li>";
+                                                    }
+                                                    $stmt_files->close();
+                                                    ?>
+                                                </ul>
+                                            </div>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Modal Edit -->
+                            <div class="modal fade" id="modalEdit<?= $row['id']; ?>" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content border-0 shadow">
+                                        <form action="guestbook.php" method="POST">
+                                            <div class="modal-header bg-light">
+                                                <h5 class="modal-title fw-bold">Edit Pengunjung</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body p-4">
+                                                <input type="hidden" name="id_edit" value="<?= $row['id']; ?>">
+                                                <div class="mb-3">
+                                                    <label class="form-label fw-semibold">Nama Pengunjung</label>
+                                                    <input type="text" class="form-control" name="nama" value="<?= htmlspecialchars($row['nama']); ?>" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label fw-semibold">Status</label>
+                                                    <select class="form-select" name="status">
+                                                        <option value="1" <?= $row['status'] == 1 ? 'selected' : ''; ?>>Hadir</option>
+                                                        <option value="2" <?= $row['status'] == 2 ? 'selected' : ''; ?>>Titip Salam</option>
+                                                    </select>
+                                                </div>
+                                                <div class="alert alert-light mt-3 mb-0 border" style="font-size: 0.85rem;">
+                                                    <i class="bi bi-info-circle me-1"></i> Tanda tangan dan lampiran file tidak dapat diubah di sini.
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer border-0 pb-4 pe-4">
+                                                <button type="submit" name="edit_data" class="btn btn-premium">Simpan Perubahan</button>
+                                            </div>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -160,51 +256,96 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
         </div>
     </div>
+</main>
 
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<?php require_once 'includes/footer.php'; ?>
+
+<!-- Script Khusus Halaman Guestbook -->
+<script>
+$(document).ready(function() {
+    $('#tabelTamu').DataTable({
+        language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/id.json' }
+    });
+});
+
+// Canvas Tanda Tangan
+const canvas = document.getElementById('canvasTTD');
+// Set actual canvas resolution to match its displayed size for crisp drawing
+canvas.width = canvas.offsetWidth || 300; 
+canvas.height = canvas.offsetHeight || 150;
+const ctx = canvas.getContext('2d');
+let isDrawing = false;
+
+// Set default background to white (so it's not transparent in image)
+ctx.fillStyle = "#ffffff";
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+function startPosition(e) {
+    isDrawing = true;
+    draw(e);
+}
+function endPosition() {
+    isDrawing = false;
+    ctx.beginPath();
+}
+function draw(e) {
+    if(!isDrawing) return;
     
-    <script>
-        // 1. Inisialisasi DataTables
-        $(document).ready(function() {
-            $('#tabelTamu').DataTable();
-        });
+    // Get correct mouse coordinates relative to canvas
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-        // 2. Script Logika Canvas Tanda Tangan
-        const canvas = document.getElementById('canvasTTD');
-        const ctx = canvas.getContext('2d');
-        let isDrawing = false;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#000000";
 
-        // Saat mouse ditekan, mulai menggambar
-        canvas.addEventListener('mousedown', (e) => {
-            isDrawing = true;
-            ctx.beginPath();
-            ctx.moveTo(e.offsetX, e.offsetY);
-        });
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+}
 
-        // Saat mouse digeser, buat garis
-        canvas.addEventListener('mousemove', (e) => {
-            if (isDrawing) {
-                ctx.lineTo(e.offsetX, e.offsetY);
-                ctx.stroke();
-                ctx.lineWidth = 2; // Ketebalan tinta
-                ctx.lineCap = 'round'; // Ujung garis membulat
-            }
-        });
+canvas.addEventListener("mousedown", startPosition);
+canvas.addEventListener("mouseup", endPosition);
+canvas.addEventListener("mousemove", draw);
 
-        // Saat mouse dilepas, stop menggambar & simpan hasilnya ke input hidden
-        canvas.addEventListener('mouseup', () => {
-            isDrawing = false;
-            document.getElementById('ttd_base64').value = canvas.toDataURL(); // Convert coretan jadi kode Base64
-        });
+// Touch support for mobile
+canvas.addEventListener("touchstart", function(e) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const mouseEvent = new MouseEvent("mousedown", {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+    });
+    canvas.dispatchEvent(mouseEvent);
+}, { passive: false });
 
-        // Fungsi Tombol Hapus TTD
-        function clearCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            document.getElementById('ttd_base64').value = ""; // Kosongkan input hidden
-        }
-    </script>
-</body>
-</html>
+canvas.addEventListener("touchend", function(e) {
+    e.preventDefault();
+    const mouseEvent = new MouseEvent("mouseup", {});
+    canvas.dispatchEvent(mouseEvent);
+}, { passive: false });
+
+canvas.addEventListener("touchmove", function(e) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const mouseEvent = new MouseEvent("mousemove", {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+    });
+    canvas.dispatchEvent(mouseEvent);
+}, { passive: false });
+
+function clearCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    document.getElementById('ttd_base64').value = "";
+}
+
+function saveCanvas() {
+    // Only save if there's actually a drawing
+    document.getElementById('ttd_base64').value = canvas.toDataURL("image/png");
+}
+</script>

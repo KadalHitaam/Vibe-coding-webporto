@@ -1,34 +1,35 @@
 <?php
-session_start();
-// Cek apakah user sudah punya tiket login
-if($_SESSION['status'] != "sudah_login"){
-    // Kalau belum login, tendang balik ke halaman login
-    header("location:login.php?pesan=belum_login");
-    exit; // Hentikan script agar kode HTML di bawahnya tidak sempat dimuat
-}
+require_once 'includes/auth.php'; // Proteksi halaman otomatis
+require_once 'includes/header.php';
+require_once 'includes/navbar.php';
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-    <style> body { font-family: 'Poppins', sans-serif; background-color: #f4f9f9; } </style>
-</head>
-<body>
-    <?php include 'navbar.php'; ?>
-
-    <div class="container mt-5">
-        <div class="card shadow-sm p-4" style="border-radius: 15px; border: none;">
-            <h2 class="fw-bold">Sekilas Aku</h2>
-            <hr>
-            <p class="fs-5">Hai, namaku Naufal, aku merupakan mahasiswa Teknik Informatika di Universitas Muhammadiyah Sukabumi.</p>
+<main class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="glass-card p-5">
+                <div class="d-flex align-items-center mb-4">
+                    <img src="assets/images/cat.png" alt="Profile Mascot" class="rounded-circle shadow-sm me-4" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--primary-color);">
+                    <div>
+                        <h2 class="fw-bold text-gradient mb-1">Halo, Selamat Datang! 👋</h2>
+                        <p class="text-muted fs-5 mb-0">Ini adalah dashboard utamaku.</p>
+                    </div>
+                </div>
+                <hr style="border-color: rgba(0,0,0,0.1);">
+                
+                <h4 class="fw-bold mt-4 mb-3">Sekilas Tentangku</h4>
+                <p class="fs-5 lh-lg" style="color: #4b5563;">
+                    Hai, namaku <strong>Naufal</strong>! Aku adalah mahasiswa <strong>Teknik Informatika</strong> di Universitas Muhammadiyah Sukabumi.
+                    Aku sangat antusias dalam mempelajari pengembangan web, merancang antarmuka pengguna yang menarik (UI/UX), serta mengeksplorasi teknologi-teknologi baru yang dapat membawa dampak positif.
+                </p>
+                
+                <div class="mt-5 text-center">
+                    <a href="guestbook.php" class="btn btn-premium me-3">Isi Buku Tamu 📝</a>
+                    <a href="multimedia.php" class="btn btn-outline-secondary rounded-pill px-4 fw-semibold shadow-sm bg-white">Lihat Multimedia 🎧</a>
+                </div>
+            </div>
         </div>
     </div>
+</main>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+<?php require_once 'includes/footer.php'; ?>
