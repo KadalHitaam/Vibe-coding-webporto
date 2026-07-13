@@ -155,6 +155,7 @@ if (isset($_POST['simpan_data'])) {
                         </thead>
                         <tbody>
                             <?php
+                            $modals_html = '';
                             $no = 1;
                             $query_tampil = $db->query("SELECT * FROM buku_tamu_naufal_2430511010 ORDER BY id DESC");
                             while ($row = $query_tampil->fetch_assoc()) {
@@ -178,6 +179,10 @@ if (isset($_POST['simpan_data'])) {
                                 </td>
                             </tr>
 
+                            <?php
+                            // Simpan modal HTML dalam buffer agar tidak berada di dalam tabel/glass-card yang merusak stacking context
+                            ob_start();
+                            ?>
                             <!-- Modal Detail -->
                             <div class="modal fade" id="modalDetail<?= $row['id']; ?>" tabindex="-1">
                                 <div class="modal-dialog">
@@ -249,7 +254,10 @@ if (isset($_POST['simpan_data'])) {
                                     </div>
                                 </div>
                             </div>
-                            <?php } ?>
+                            <?php
+                            $modals_html .= ob_get_clean();
+                            }
+                            ?>
                         </tbody>
                     </table>
                 </div>
@@ -258,7 +266,11 @@ if (isset($_POST['simpan_data'])) {
     </div>
 </main>
 
+<!-- Output modal HTML di luar pembungkus tabel & card untuk menjaga stacking context agar tidak tertutup overlay gelap -->
+<?= $modals_html; ?>
+
 <?php require_once 'includes/footer.php'; ?>
+
 
 <!-- Script Khusus Halaman Guestbook -->
 <script>
